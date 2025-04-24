@@ -1,22 +1,17 @@
 package main
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
 	"os"
-	"strings"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
-	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
 	"github.com/google/uuid"
 )
 
@@ -128,8 +123,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// newVideoURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, fileKey)
-	newVideoURL := fmt.Sprintf("%s,%s", cfg.s3Bucket, fileKey)
+	newVideoURL := fmt.Sprintf("%s/%s", cfg.s3CfDistribution, fileKey)
 	videoMeta.VideoURL = &newVideoURL
 	err = cfg.db.UpdateVideo(videoMeta)
 	if err != nil {
@@ -137,45 +131,5 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	signedVideo, err := cfg.dbVideoToSignedVideo(videoMeta)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Unable to generate signed video metadata", err)
-		return
-	}
-
-	respondWithJSON(w, http.StatusOK, signedVideo)
-}
-
-func generatePresignedURL(s3Client *s3.Client, bucket, key string, expireTime time.Duration) (string, error) {
-	client := s3.NewPresignClient(s3Client)
-	r, err := client.PresignGetObject(
-		context.Background(), 
-		&s3.GetObjectInput{
-			Bucket: &bucket,
-			Key: &key,
-		},
-		s3.WithPresignExpires(expireTime),
-	)
-	if err != nil {
-		return "", err
-	}
-	return r.URL, nil
-}
-
-func (cfg *apiConfig) dbVideoToSignedVideo(video database.Video) (database.Video, error) {
-	if video.VideoURL == nil {
-		return video, errors.New("video URL is nil")
-	}
-	s := strings.Split(*video.VideoURL, ",")
-	if len(s) != 2 {
-		return database.Video{}, errors.New("wrong format for vidoe url: should be 'bucket,key'")
-	}
-	bucket := s[0]
-	key := s[1]
-	url, err := generatePresignedURL(cfg.s3Client, bucket, key, 15 * time.Minute)
-	if err != nil {
-		return database.Video{}, fmt.Errorf("error generating presigned url: %s", err)
-	}
-	video.VideoURL = &url
-	return video, nil
+	respondWithJSON(w, http.StatusOK, videoMeta)
 }
